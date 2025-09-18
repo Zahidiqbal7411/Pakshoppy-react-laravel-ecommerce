@@ -1,0 +1,13 @@
+# React
+react/node_modules/
+react/build/
+
+# Laravel
+laravel/vendor/
+laravel/storage/
+laravel/.env
+
+# Common
+.DS_Store
+npm-debug.log*
+yarn-error.log*
