@@ -1,9 +1,9 @@
 <?php
 
-namespace App\Http\Controllers\API;
+namespace App\Http\Controllers;
 
-use App\Http\Controllers\Controller;
-use App\Models\Product; // Make sure you have Product model
+use App\Models\Product;
+use App\Models\ProductImage;
 use Illuminate\Http\Request;
 
 class ProductController extends Controller
@@ -11,32 +11,59 @@ class ProductController extends Controller
     // List all products
     public function index()
     {
-        $products = Product::all();
+        $products = Product::with('images')->get();
         return response()->json($products);
     }
 
     // Store new product
     public function store(Request $request)
     {
-        $request->validate([
-            'name' => 'required|string|max:255',
+        $validated = $request->validate([
+            'name' => 'required|string',
+            'slug' => 'required|string|unique:products',
             'price' => 'required|numeric',
-            'description' => 'nullable|string'
+            'description' => 'required|string',
+            'discount_price' => 'nullable|numeric',
+            'stock_keeping_unit' => 'required|string',
+            'quantity' => 'required|integer',
+            'status' => 'required|in:active,inactive',
+            'product_images' => 'required|array',
+            'product_images.*' => 'image|mimes:jpeg,png,jpg,gif,svg|max:2048',
         ]);
 
-        $product = Product::create([
-            'name' => $request->name,
-            'price' => $request->price,
-            'description' => $request->description,
-        ]);
+        $product = Product::create($request->only([
+            'name',
+            'slug',
+            'price',
+            'description',
+            'discount_price',
+            'stock_keeping_unit',
+            'quantity',
+            'status',
+        ]));
 
-        return response()->json($product, 201); // 201 Created
+        // Save images
+        if ($request->hasFile('product_images')) {
+            foreach ($request->file('product_images') as $image) {
+                $filename = time() . '_' . uniqid() . '.' . $image->getClientOriginalExtension();
+                $image->move(public_path('products'), $filename);
+
+                ProductImage::create([
+                    'product_id' => $product->id,
+                    'image_path' => 'products/' . $filename,
+                ]);
+            }
+        }
+
+        $product->load('images');
+
+        return response()->json($product, 201);
     }
 
-    // Get single product
+    // Show single product
     public function show($id)
     {
-        $product = Product::find($id);
+        $product = Product::with('images')->find($id);
 
         if (!$product) {
             return response()->json(['message' => 'Product not found'], 404);
@@ -45,7 +72,7 @@ class ProductController extends Controller
         return response()->json($product);
     }
 
-    // Update product
+    // Update product (optional)
     public function update(Request $request, $id)
     {
         $product = Product::find($id);
@@ -57,7 +84,7 @@ class ProductController extends Controller
         $request->validate([
             'name' => 'sometimes|required|string|max:255',
             'price' => 'sometimes|required|numeric',
-            'description' => 'nullable|string'
+            'description' => 'nullable|string',
         ]);
 
         $product->update($request->all());
@@ -72,6 +99,15 @@ class ProductController extends Controller
 
         if (!$product) {
             return response()->json(['message' => 'Product not found'], 404);
+        }
+
+        // Delete associated images files
+        foreach ($product->images as $img) {
+            $file_path = public_path($img->image_path);
+            if (file_exists($file_path)) {
+                unlink($file_path);
+            }
+            $img->delete();
         }
 
         $product->delete();
