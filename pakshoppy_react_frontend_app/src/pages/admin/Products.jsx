@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import api from "../../api/axios"; // your axios instance
+import api from "../../api/axios"; // Adjust this import to your axios instance path
 
 export default function Products() {
   const [products, setProducts] = useState([]);
@@ -13,17 +13,18 @@ export default function Products() {
     description: "",
     status: "",
   });
-  const [productImages, setProductImages] = useState([]); // Files for upload
+  const [productImages, setProductImages] = useState([]);
   const [uploading, setUploading] = useState(false);
+  const [previewImage, setPreviewImage] = useState(null); // 👈 Added for image preview
 
   useEffect(() => {
     fetchProducts();
   }, []);
 
+  // Fetch all products with images
   const fetchProducts = async () => {
     try {
       const res = await api.get("/products");
-      // Backend returns images as relations, map accordingly
       const data = res.data.map((p) => ({
         ...p,
         images: p.images ? p.images.map((img) => img.image_path) : [],
@@ -34,14 +35,19 @@ export default function Products() {
     }
   };
 
+  // Handle form field and file inputs
   const handleChange = (e) => {
     if (e.target.type === "file") {
       setProductImages(Array.from(e.target.files));
     } else {
-      setForm({ ...form, [e.target.name]: e.target.value });
+      setForm((prev) => ({
+        ...prev,
+        [e.target.name]: e.target.value,
+      }));
     }
   };
 
+  // Submit product + images in one request using FormData
   const addProduct = async (e) => {
     e.preventDefault();
 
@@ -55,22 +61,14 @@ export default function Products() {
     try {
       const formData = new FormData();
 
-      // Append product fields
-      formData.append("name", form.name);
-      formData.append("slug", form.slug);
-      formData.append("price", form.price);
-      formData.append("description", form.description);
-      if (form.discount_price) formData.append("discount_price", form.discount_price);
-      formData.append("stock_keeping_unit", form.stock_keeping_unit);
-      formData.append("quantity", form.quantity);
-      formData.append("status", form.status);
+      Object.entries(form).forEach(([key, value]) => {
+        formData.append(key, value);
+      });
 
-      // Append images
       productImages.forEach((file) => {
         formData.append("product_images[]", file);
       });
 
-      // Send multipart/form-data POST request
       const res = await api.post("/products", formData, {
         headers: {
           "Content-Type": "multipart/form-data",
@@ -82,7 +80,6 @@ export default function Products() {
 
       setProducts((prev) => [...prev, newProduct]);
 
-      // Reset form and file input
       setForm({
         name: "",
         slug: "",
@@ -94,16 +91,23 @@ export default function Products() {
         status: "",
       });
       setProductImages([]);
-      document.getElementById("productImageInput").value = "";
+      document.getElementById("productImageInput").value = null;
     } catch (err) {
-      console.error("Failed to add product:", err);
-      alert("Error adding product. See console.");
+      console.error("Error:", err.response?.data || err.message);
+      if (err.response?.status === 422) {
+        alert("Validation errors: " + JSON.stringify(err.response.data.errors));
+      } else {
+        alert("Something went wrong. Check console.");
+      }
     } finally {
       setUploading(false);
     }
   };
 
+  // Delete product handler
   const deleteProduct = async (id) => {
+    if (!window.confirm("Are you sure you want to delete this product?")) return;
+
     try {
       await api.delete(`/products/${id}`);
       setProducts((prev) => prev.filter((p) => p.id !== id));
@@ -236,13 +240,16 @@ export default function Products() {
                       key={i}
                       src={`http://localhost:8000/${img}`}
                       alt={`${p.name}-${i}`}
+                      onClick={() => setPreviewImage(`http://localhost:8000/${img}`)} // 👈 Click to preview
                       style={{
                         width: "60px",
                         height: "60px",
                         objectFit: "cover",
                         borderRadius: "4px",
                         marginRight: "5px",
+                        cursor: "pointer",
                       }}
+                      title="Click to preview"
                     />
                   ))
                 ) : (
@@ -253,6 +260,7 @@ export default function Products() {
                 <button
                   className="btn btn-danger btn-sm"
                   onClick={() => deleteProduct(p.id)}
+                  disabled={uploading}
                 >
                   Delete
                 </button>
@@ -261,6 +269,38 @@ export default function Products() {
           ))}
         </tbody>
       </table>
+
+      {/* Image Preview Overlay */}
+      {previewImage && (
+        <div
+          onClick={() => setPreviewImage(null)}
+          style={{
+            position: "fixed",
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: "rgba(0, 0, 0, 0.8)",
+            display: "flex",
+            justifyContent: "center",
+            alignItems: "center",
+            zIndex: 9999,
+            cursor: "pointer",
+          }}
+        >
+          <img
+            src={previewImage}
+            alt="Preview"
+            style={{
+              maxWidth: "90%",
+              maxHeight: "90%",
+              border: "4px solid white",
+              borderRadius: "10px",
+              boxShadow: "0 0 20px rgba(255,255,255,0.5)",
+            }}
+          />
+        </div>
+      )}
     </div>
   );
 }
