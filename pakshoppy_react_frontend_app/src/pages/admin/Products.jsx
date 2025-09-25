@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import api from "../../api/axios"; // Adjust this import to your axios instance path
+import api from "../../api/axios"; // Adjust path as needed
 
 export default function Products() {
   const [products, setProducts] = useState([]);
@@ -13,21 +13,24 @@ export default function Products() {
     description: "",
     status: "",
   });
-  const [productImages, setProductImages] = useState([]);
+
+  const [productImages, setProductImages] = useState([]); // new images to upload
+  const [existingImages, setExistingImages] = useState([]); // images from DB
+  const [deleteImageIds, setDeleteImageIds] = useState([]); // images marked for deletion
   const [uploading, setUploading] = useState(false);
-  const [previewImage, setPreviewImage] = useState(null); // 👈 Added for image preview
+  const [previewImage, setPreviewImage] = useState(null);
+  const [selectedProductId, setSelectedProductId] = useState(null);
 
   useEffect(() => {
     fetchProducts();
   }, []);
 
-  // Fetch all products with images
   const fetchProducts = async () => {
     try {
       const res = await api.get("/products");
       const data = res.data.map((p) => ({
         ...p,
-        images: p.images ? p.images.map((img) => img.image_path) : [],
+        images: p.images ? p.images.map((img) => ({ id: img.id, image_path: img.image_path })) : [],
       }));
       setProducts(data);
     } catch (error) {
@@ -35,7 +38,6 @@ export default function Products() {
     }
   };
 
-  // Handle form field and file inputs
   const handleChange = (e) => {
     if (e.target.type === "file") {
       setProductImages(Array.from(e.target.files));
@@ -47,11 +49,34 @@ export default function Products() {
     }
   };
 
-  // Submit product + images in one request using FormData
+  const toggleDeleteImage = (id) => {
+    setDeleteImageIds((prev) =>
+      prev.includes(id) ? prev.filter((imgId) => imgId !== id) : [...prev, id]
+    );
+  };
+
+  const resetForm = () => {
+    setForm({
+      name: "",
+      slug: "",
+      discount_price: "",
+      stock_keeping_unit: "",
+      quantity: "",
+      price: "",
+      description: "",
+      status: "",
+    });
+    setProductImages([]);
+    setExistingImages([]);
+    setDeleteImageIds([]);
+    setSelectedProductId(null);
+    document.getElementById("productImageInput").value = null;
+  };
+
   const addProduct = async (e) => {
     e.preventDefault();
 
-    if (productImages.length === 0) {
+    if (productImages.length === 0 && !selectedProductId) {
       alert("Please select at least one image");
       return;
     }
@@ -65,33 +90,40 @@ export default function Products() {
         formData.append(key, value);
       });
 
+      // Append new images to upload
       productImages.forEach((file) => {
         formData.append("product_images[]", file);
       });
 
-      const res = await api.post("/products", formData, {
-        headers: {
-          "Content-Type": "multipart/form-data",
-        },
-      });
+      if (selectedProductId) {
+        // Append IDs of images to delete on server
+        formData.append("delete_image_ids", JSON.stringify(deleteImageIds));
 
-      const newProduct = res.data;
-      newProduct.images = newProduct.images.map((img) => img.image_path);
+        // Update product
+        const res = await api.post(`/products/${selectedProductId}?_method=PUT`, formData, {
+          headers: { "Content-Type": "multipart/form-data" },
+        });
 
-      setProducts((prev) => [...prev, newProduct]);
+        const updatedProduct = res.data;
+        updatedProduct.images = updatedProduct.images.map((img) => ({ id: img.id, image_path: img.image_path }));
 
-      setForm({
-        name: "",
-        slug: "",
-        discount_price: "",
-        stock_keeping_unit: "",
-        quantity: "",
-        price: "",
-        description: "",
-        status: "",
-      });
-      setProductImages([]);
-      document.getElementById("productImageInput").value = null;
+        setProducts((prev) =>
+          prev.map((p) => (p.id === selectedProductId ? updatedProduct : p))
+        );
+        alert("Product updated successfully!");
+      } else {
+        // Create product
+        const res = await api.post("/products", formData, {
+          headers: { "Content-Type": "multipart/form-data" },
+        });
+
+        const newProduct = res.data;
+        newProduct.images = newProduct.images.map((img) => ({ id: img.id, image_path: img.image_path }));
+        setProducts((prev) => [...prev, newProduct]);
+        alert("Product added successfully!");
+      }
+
+      resetForm();
     } catch (err) {
       console.error("Error:", err.response?.data || err.message);
       if (err.response?.status === 422) {
@@ -104,7 +136,6 @@ export default function Products() {
     }
   };
 
-  // Delete product handler
   const deleteProduct = async (id) => {
     if (!window.confirm("Are you sure you want to delete this product?")) return;
 
@@ -115,6 +146,28 @@ export default function Products() {
       console.error("Delete error:", error);
       alert("Failed to delete product.");
     }
+  };
+
+  const updateProduct = (id) => {
+    const product = products.find((p) => p.id === id);
+    if (!product) return;
+
+    setForm({
+      name: product.name,
+      slug: product.slug,
+      discount_price: product.discount_price,
+      stock_keeping_unit: product.stock_keeping_unit,
+      quantity: product.quantity,
+      price: product.price,
+      description: product.description,
+      status: product.status,
+    });
+
+    setSelectedProductId(id);
+    setProductImages([]);
+    setDeleteImageIds([]);
+    setExistingImages(product.images);
+    document.getElementById("productImageInput").value = null;
   };
 
   return (
@@ -191,6 +244,7 @@ export default function Products() {
           <option value="active">Active</option>
           <option value="inactive">Inactive</option>
         </select>
+
         <input
           type="file"
           name="product_images"
@@ -198,13 +252,62 @@ export default function Products() {
           onChange={handleChange}
           className="form-control mb-2"
           multiple
-          required
           disabled={uploading}
           accept="image/*"
         />
-        <button type="submit" className="btn btn-success" disabled={uploading}>
-          {uploading ? "Uploading..." : "Add Product"}
+
+        {/* Show existing images with toggle delete */}
+        {existingImages.length > 0 && (
+          <div style={{ marginBottom: 10 }}>
+            <strong>Existing Images (click to toggle delete):</strong>
+            <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
+              {existingImages.map((img) => (
+                <img
+                  key={img.id}
+                  src={`http://localhost:8000/${img.image_path}`}
+                  alt="existing"
+                  width={60}
+                  height={60}
+                  onClick={() => toggleDeleteImage(img.id)}
+                  style={{
+                    cursor: "pointer",
+                    border: deleteImageIds.includes(img.id)
+                      ? "3px solid red"
+                      : "1px solid #ccc",
+                    borderRadius: 4,
+                    objectFit: "cover",
+                  }}
+                  title={
+                    deleteImageIds.includes(img.id)
+                      ? "Marked for deletion"
+                      : "Click to mark for deletion"
+                  }
+                />
+              ))}
+            </div>
+          </div>
+        )}
+
+        <button type="submit" className="btn btn-success me-1" disabled={uploading}>
+          {uploading
+            ? selectedProductId
+              ? "Updating..."
+              : "Uploading..."
+            : selectedProductId
+            ? "Update Product"
+            : "Add Product"}
         </button>
+
+        {selectedProductId && (
+          <button
+            type="button"
+            className="btn btn-secondary ml-2"
+            onClick={resetForm}
+            disabled={uploading}
+          >
+            Cancel Update
+          </button>
+        )}
       </form>
 
       <table className="table table-bordered">
@@ -219,7 +322,7 @@ export default function Products() {
             <th>Quantity</th>
             <th>Slug</th>
             <th>Images</th>
-            <th>Action</th>
+            <th colSpan={2}>Action</th>
           </tr>
         </thead>
         <tbody>
@@ -238,9 +341,11 @@ export default function Products() {
                   p.images.map((img, i) => (
                     <img
                       key={i}
-                      src={`http://localhost:8000/${img}`}
+                      src={`http://localhost:8000/${img.image_path}`}
                       alt={`${p.name}-${i}`}
-                      onClick={() => setPreviewImage(`http://localhost:8000/${img}`)} // 👈 Click to preview
+                      onClick={() =>
+                        setPreviewImage(`http://localhost:8000/${img.image_path}`)
+                      }
                       style={{
                         width: "60px",
                         height: "60px",
@@ -263,6 +368,15 @@ export default function Products() {
                   disabled={uploading}
                 >
                   Delete
+                </button>
+              </td>
+              <td>
+                <button
+                  className="btn btn-warning btn-sm"
+                  onClick={() => updateProduct(p.id)}
+                  disabled={uploading}
+                >
+                  Update
                 </button>
               </td>
             </tr>
