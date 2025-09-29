@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import api from "../../api/axios"; // Adjust path as needed
 
-export default function Products() {
+export default function Products(props) {
   const [products, setProducts] = useState([]);
   const [form, setForm] = useState({
     name: "",
@@ -313,9 +313,9 @@ export default function Products() {
       <table className="table table-bordered">
         <thead>
           <tr>
-            <th>ID</th>
+            <th >ID</th>
             <th>Name</th>
-            <th>Price</th>
+            <th>Price </th>
             <th>Description</th>
             <th>Discount Price</th>
             <th>SKU</th>

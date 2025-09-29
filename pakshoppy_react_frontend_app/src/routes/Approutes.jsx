@@ -71,7 +71,7 @@ export default function AppRoutes() {
       {/* Dashboard with nested routes */}
       <Route path="/dashboard" element={<Dashboard />}>
         <Route index element={<h1>Welcome to Admin Dashboard</h1>} />
-        <Route path="products" element={<Products />} />
+        <Route path="products" element={<Products  />} />
         <Route path="orders" element={<Orders />} />
         <Route path="reports" element={<Reports />} />
         <Route path="categories" element={<Category />}/>

@@ -114,7 +114,7 @@ class ProductController extends Controller
                 $image->delete();
             }
         }
-    }
+    }            
 
     // Handle new image uploads
     if ($request->hasFile('product_images')) {
